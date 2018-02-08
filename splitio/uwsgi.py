@@ -557,6 +557,7 @@ class UWSGIImpressionsCache(ImpressionsCache):
         :param impression: The impression tuple
         :type impression: Impression
         """
+        start = int(time.time())
         cache_impression = {'keyName':impression.matching_key,
                             'treatment':impression.treatment,
                             'time':impression.time,
@@ -584,6 +585,7 @@ class UWSGIImpressionsCache(ImpressionsCache):
         self._adapter.cache_update(self._IMPRESSIONS_KEY, encode(impressions), 0, _SPLITIO_STATS_CACHE_NAMESPACE)
 
         self.__unlock_impressions()
+        print("PROFILING_ADD_IMPRESSION: {}".format(int(time.time()) - start))
 
     def fetch_all_and_clear(self):
         """Fetches all impressions from the cache and clears it. It returns a dictionary with the
@@ -591,6 +593,7 @@ class UWSGIImpressionsCache(ImpressionsCache):
         :return: All cached impressions so far grouped by feature name
         :rtype: dict
         """
+        start = int(time.time())
 
         if self._adapter.cache_exists(self._IMPRESSIONS_KEY, _SPLITIO_STATS_CACHE_NAMESPACE):
             impressions_list = list()
@@ -621,7 +624,9 @@ class UWSGIImpressionsCache(ImpressionsCache):
             if not impressions_list:
                 return dict()
 
-            return self._build_impressions_dict(impressions_list)
+        il = self._build_impressions_dict(impressions_list)
+        print("PROFILING_ADD_IMPRESSION: {}".format(int(time.time()) - start))
+        return il
 
         return dict()
 
