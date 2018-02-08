@@ -558,33 +558,46 @@ class UWSGIImpressionsCache(ImpressionsCache):
         :type impression: Impression
         """
         start = time.time()
-        cache_impression = {'keyName':impression.matching_key,
-                            'treatment':impression.treatment,
-                            'time':impression.time,
-                            'changeNumber':impression.change_number,
-                            'label':impression.label,
-                            'bucketingKey':impression.bucketing_key
-                            }
 
         self.__lock_impressions()
-
-        if self._adapter.cache_exists(self._IMPRESSIONS_KEY, _SPLITIO_STATS_CACHE_NAMESPACE):
-            impressions = decode(self._adapter.cache_get(self._IMPRESSIONS_KEY, _SPLITIO_STATS_CACHE_NAMESPACE))
+        impressions_raw = self._adapter.cache_get(self._IMPRESSIONS_KEY, _SPLITIO_STATS_CACHE_NAMESPACE)
+        if impressions_raw:
+            impressions = decode(impressions_raw)
         else:
-            impressions = dict()
-
-        if impression.feature_name not in impressions:
-            impressions[impression.feature_name] = [cache_impression]
-        else:
-            impressions_set = impressions[impression.feature_name]
-            impressions_set.append(cache_impression)
-            impressions_set.reverse()
-            impressions[impression.feature_name] = impressions_set
-
-        _logger.debug('Adding impressions to cache: %s' % impressions)
+            impressions = []
+        impressions.append(impression)
         self._adapter.cache_update(self._IMPRESSIONS_KEY, encode(impressions), 0, _SPLITIO_STATS_CACHE_NAMESPACE)
-
         self.__unlock_impressions()
+
+        print("PROFILING_ADD_IMPRESSION: {}\n".format(time.time() - start))
+
+#        cache_impression = {'keyName':impression.matching_key,
+#                            'treatment':impression.treatment,
+#                            'time':impression.time,
+#                            'changeNumber':impression.change_number,
+#                            'label':impression.label,
+#                            'bucketingKey':impression.bucketing_key
+#                            }
+#
+#        self.__lock_impressions()
+#
+#        if self._adapter.cache_exists(self._IMPRESSIONS_KEY, _SPLITIO_STATS_CACHE_NAMESPACE):
+#            impressions = decode(self._adapter.cache_get(self._IMPRESSIONS_KEY, _SPLITIO_STATS_CACHE_NAMESPACE))
+#        else:
+#            impressions = dict()
+#
+#        if impression.feature_name not in impressions:
+#            impressions[impression.feature_name] = [cache_impression]
+#        else:
+#            impressions_set = impressions[impression.feature_name]
+#            impressions_set.append(cache_impression)
+#            impressions_set.reverse()
+#            impressions[impression.feature_name] = impressions_set
+#
+#        _logger.debug('Adding impressions to cache: %s' % impressions)
+#        self._adapter.cache_update(self._IMPRESSIONS_KEY, encode(impressions), 0, _SPLITIO_STATS_CACHE_NAMESPACE)
+#
+#        self.__unlock_impressions()
         print("PROFILING_ADD_IMPRESSION: {}\n".format(time.time() - start))
 
     def fetch_all_and_clear(self):
@@ -594,41 +607,55 @@ class UWSGIImpressionsCache(ImpressionsCache):
         :rtype: dict
         """
         start = time.time()
-
-        if self._adapter.cache_exists(self._IMPRESSIONS_KEY, _SPLITIO_STATS_CACHE_NAMESPACE):
-            impressions_list = list()
-
-            self.__lock_impressions()
-
-            cached_impressions = decode(self._adapter.cache_get(self._IMPRESSIONS_KEY, _SPLITIO_STATS_CACHE_NAMESPACE))
-            self._adapter.cache_del(self._IMPRESSIONS_KEY, _SPLITIO_STATS_CACHE_NAMESPACE)
-
+        self.__lock_impressions()
+        raw_impressions = self._adapter.cache_get(self._IMPRESSIONS_KEY, _SPLITIO_STATS_CACHE_NAMESPACE)
+        if raw_impressions is None:
             self.__unlock_impressions()
+            return
 
-            _logger.debug('**** Cached Impressions: %s' % cached_impressions)
+        self._adapter.cache_del(self._IMPRESSIONS_KEY, _SPLITIO_STATS_CACHE_NAMESPACE)
+        self.__unlock_impressions()
 
-            for feature_name in cached_impressions:
-                impressions = cached_impressions[feature_name]
+        impressions = decode(raw_impressions)
 
-                for impression in impressions:
-                    impression_tuple = Impression(matching_key=impression['keyName'],
-                                                  feature_name=feature_name,
-                                                  treatment=impression['treatment'],
-                                                  label=impression['label'],
-                                                  change_number=impression['changeNumber'],
-                                                  bucketing_key=impression['bucketingKey'],
-                                                  time=impression['time']
-                                                  )
-                    impressions_list.append(impression_tuple)
-
-            if not impressions_list:
-                return dict()
-
-        il = self._build_impressions_dict(impressions_list)
+        il = self._build_impressions_dict(impressions)
         print("PROFILING_SEND_IMPRESSION: {}\n".format(time.time() - start))
         return il
 
-        return dict()
+#        if self._adapter.cache_exists(self._IMPRESSIONS_KEY, _SPLITIO_STATS_CACHE_NAMESPACE):
+#            impressions_list = list()
+#
+#            self.__lock_impressions()
+#
+#            cached_impressions = decode(self._adapter.cache_get(self._IMPRESSIONS_KEY, _SPLITIO_STATS_CACHE_NAMESPACE))
+#            self._adapter.cache_del(self._IMPRESSIONS_KEY, _SPLITIO_STATS_CACHE_NAMESPACE)
+#
+#            self.__unlock_impressions()
+#
+#            _logger.debug('**** Cached Impressions: %s' % cached_impressions)
+#
+#            for feature_name in cached_impressions:
+#                impressions = cached_impressions[feature_name]
+#
+#                for impression in impressions:
+#                    impression_tuple = Impression(matching_key=impression['keyName'],
+#                                                  feature_name=feature_name,
+#                                                  treatment=impression['treatment'],
+#                                                  label=impression['label'],
+#                                                  change_number=impression['changeNumber'],
+#                                                  bucketing_key=impression['bucketingKey'],
+#                                                  time=impression['time']
+#                                                  )
+#                    impressions_list.append(impression_tuple)
+#
+#            if not impressions_list:
+#                return dict()
+#
+#        il = self._build_impressions_dict(impressions_list)
+#        print("PROFILING_SEND_IMPRESSION: {}\n".format(time.time() - start))
+#        return il
+#
+#        return dict()
 
 
 class UWSGIEventsCache:
