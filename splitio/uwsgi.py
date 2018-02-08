@@ -625,7 +625,7 @@ class UWSGIImpressionsCache(ImpressionsCache):
                 return dict()
 
         il = self._build_impressions_dict(impressions_list)
-        print("PROFILING_ADD_IMPRESSION: {}".format(int(time.time()) - start))
+        print("PROFILING_SEND_IMPRESSION: {}".format(int(time.time()) - start))
         return il
 
         return dict()
