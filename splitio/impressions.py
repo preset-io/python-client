@@ -9,7 +9,7 @@ from threading import Thread
 from collections import namedtuple, defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
-from threading import RLock, Timer
+from threading import RLock, Lock
 
 
 Impression = namedtuple(
@@ -266,152 +266,152 @@ class CacheBasedTreatmentLog(TreatmentLog):
             self._impressions_cache.add_impression(impression)
 
 
-class SelfUpdatingTreatmentLog(InMemoryTreatmentLog):
-    def __init__(self, api, interval=180, max_workers=5, max_count=-1,
-                 ignore_impressions=False, listener=None):
-        """
-        An impressions implementation that sends the in impressions stored
-        periodically to the Split.io back-end.
-        :param api: The SDK api client
-        :type api: SdkApi
-        :param interval: Optional update interval (Default: 180s)
-        :type interval: int
-        :param max_workers: The max number of workers used to update impressions
-        :type max_workers: int
-        :param max_count: Max number of impressions per feature before eviction
-        :type max_count: int
-        :param ignore_impressions: Whether to ignore log requests
-        :type ignore_impressions: bool
-        :param listener: callback that will receive impressions bulk fur custom
-            user handling of impressions.
-        :type listener: callable
-        """
-        super(SelfUpdatingTreatmentLog, self).__init__(
-            max_count=max_count,
-            ignore_impressions=ignore_impressions
-        )
-        self._api = api
-        self._interval = interval
-        self._stopped = True
-        self._thread_pool_executor = ThreadPoolExecutor(max_workers=max_workers)
-        self._listener = listener
-
-    @property
-    def stopped(self):
-        """
-        :return: Whether the update process has been stopped
-        :rtype: bool
-        """
-        return self._stopped
-
-    @stopped.setter
-    def stopped(self, stopped):
-        """
-        :param stopped: Whether to stop the update process
-        :type stopped: bool
-        """
-        self._stopped = stopped
-
-    def start(self):
-        """Starts the update process"""
-        if not self._stopped:
-            return
-
-        self._stopped = False
-        self._timer_refresh()
-
-    def _update_evictions(self, feature_name, feature_impressions):
-        """
-        Sends evicted impressions to the Split.io back-end.
-        :param feature_name: The name of the feature
-        :type feature_name: str
-        :param feature_impressions: The evicted impressions
-        :type feature_impressions: list
-        """
-        try:
-            test_impressions_data = build_impressions_data(
-                {feature_name: feature_impressions}
-            )
-
-            if len(test_impressions_data) > 0:
-                self._api.test_impressions(test_impressions_data)
-                _notify_listener(self._listener, test_impressions_data)
-        except:
-            self._logger.exception(
-                'Exception caught updating evicted impressions'
-            )
-            self._stopped = True
-
-
-    def _update_impressions(self):
-        """
-        Sends the impressions stored back to the Split.io back-end
-        """
-        try:
-            impressions_by_feature = self.fetch_all_and_clear()
-            test_impressions_data = build_impressions_data(
-                impressions_by_feature
-            )
-
-            if len(test_impressions_data) > 0:
-                self._api.test_impressions(test_impressions_data)
-                _notify_listener(self._listener, test_impressions_data)
-        except:
-            self._logger.exception('Exception caught updating impressions')
-            self._stopped = True
-
-
-
-    def _notify_eviction(self, feature_name, feature_impressions):
-        """
-        Notifies that the max count was reached for a feature. The evicted
-        impressions are going to be sent to the back-end.
-        :param feature_name: The name of the feature
-        :type feature_name: str
-        :param feature_impressions: The evicted impressions
-        :type feature_impressions: list
-        """
-        if self._destroyed \
-                or feature_name is None \
-                or feature_impressions is None or len(feature_impressions) == 0:
-            return
-
-        try:
-            self._thread_pool_executor.submit(
-                self._update_evictions, feature_name, feature_impressions
-            )
-        except:
-            self._logger.exception(
-                'Exception caught starting evicted impressions update thread'
-            )
-
-    def _timer_refresh(self):
-        """
-        Responsible for setting the periodic calls to _update_impressions using
-        a Timer thread.
-        """
-        if self._destroyed:
-            return
-
-        try:
-            self._thread_pool_executor.submit(self._update_impressions)
-        except:
-            self._logger.exception(
-                'Exception caught starting impressions update thread'
-            )
-
-        try:
-            if hasattr(self._interval, '__call__'):
-                interval = self._interval()
-            else:
-                interval = self._interval
-
-            timer = Timer(interval, self._timer_refresh)
-            timer.daemon = True
-            timer.start()
-        except:
-            self._logger.exception('Exception caught refreshing timer')
-            self._stopped = True
+#class SelfUpdatingTreatmentLog(InMemoryTreatmentLog):
+#    def __init__(self, api, interval=180, max_workers=5, max_count=-1,
+#                 ignore_impressions=False, listener=None):
+#        """
+#        An impressions implementation that sends the in impressions stored
+#        periodically to the Split.io back-end.
+#        :param api: The SDK api client
+#        :type api: SdkApi
+#        :param interval: Optional update interval (Default: 180s)
+#        :type interval: int
+#        :param max_workers: The max number of workers used to update impressions
+#        :type max_workers: int
+#        :param max_count: Max number of impressions per feature before eviction
+#        :type max_count: int
+#        :param ignore_impressions: Whether to ignore log requests
+#        :type ignore_impressions: bool
+#        :param listener: callback that will receive impressions bulk fur custom
+#            user handling of impressions.
+#        :type listener: callable
+#        """
+#        super(SelfUpdatingTreatmentLog, self).__init__(
+#            max_count=max_count,
+#            ignore_impressions=ignore_impressions
+#        )
+#        self._api = api
+#        self._interval = interval
+#        self._stopped = True
+#        self._thread_pool_executor = ThreadPoolExecutor(max_workers=max_workers)
+#        self._listener = listener
+#
+#    @property
+#    def stopped(self):
+#        """
+#        :return: Whether the update process has been stopped
+#        :rtype: bool
+#        """
+#        return self._stopped
+#
+#    @stopped.setter
+#    def stopped(self, stopped):
+#        """
+#        :param stopped: Whether to stop the update process
+#        :type stopped: bool
+#        """
+#        self._stopped = stopped
+#
+#    def start(self):
+#        """Starts the update process"""
+#        if not self._stopped:
+#            return
+#
+#        self._stopped = False
+#        self._timer_refresh()
+#
+#    def _update_evictions(self, feature_name, feature_impressions):
+#        """
+#        Sends evicted impressions to the Split.io back-end.
+#        :param feature_name: The name of the feature
+#        :type feature_name: str
+#        :param feature_impressions: The evicted impressions
+#        :type feature_impressions: list
+#        """
+#        try:
+#            test_impressions_data = build_impressions_data(
+#                {feature_name: feature_impressions}
+#            )
+#
+#            if len(test_impressions_data) > 0:
+#                self._api.test_impressions(test_impressions_data)
+#                _notify_listener(self._listener, test_impressions_data)
+#        except:
+#            self._logger.exception(
+#                'Exception caught updating evicted impressions'
+#            )
+#            self._stopped = True
+#
+#
+#    def _update_impressions(self):
+#        """
+#        Sends the impressions stored back to the Split.io back-end
+#        """
+#        try:
+#            impressions_by_feature = self.fetch_all_and_clear()
+#            test_impressions_data = build_impressions_data(
+#                impressions_by_feature
+#            )
+#
+#            if len(test_impressions_data) > 0:
+#                self._api.test_impressions(test_impressions_data)
+#                _notify_listener(self._listener, test_impressions_data)
+#        except:
+#            self._logger.exception('Exception caught updating impressions')
+#            self._stopped = True
+#
+#
+#
+#    def _notify_eviction(self, feature_name, feature_impressions):
+#        """
+#        Notifies that the max count was reached for a feature. The evicted
+#        impressions are going to be sent to the back-end.
+#        :param feature_name: The name of the feature
+#        :type feature_name: str
+#        :param feature_impressions: The evicted impressions
+#        :type feature_impressions: list
+#        """
+#        if self._destroyed \
+#                or feature_name is None \
+#                or feature_impressions is None or len(feature_impressions) == 0:
+#            return
+#
+#        try:
+#            self._thread_pool_executor.submit(
+#                self._update_evictions, feature_name, feature_impressions
+#            )
+#        except:
+#            self._logger.exception(
+#                'Exception caught starting evicted impressions update thread'
+#            )
+#
+#    def _timer_refresh(self):
+#        """
+#        Responsible for setting the periodic calls to _update_impressions using
+#        a Timer thread.
+#        """
+#        if self._destroyed:
+#            return
+#
+#        try:
+#            self._thread_pool_executor.submit(self._update_impressions)
+#        except:
+#            self._logger.exception(
+#                'Exception caught starting impressions update thread'
+#            )
+#
+#        try:
+#            if hasattr(self._interval, '__call__'):
+#                interval = self._interval()
+#            else:
+#                interval = self._interval
+#
+#            timer = Timer(interval, self._timer_refresh)
+#            timer.daemon = True
+#            timer.start()
+#        except:
+#            self._logger.exception('Exception caught refreshing timer')
+#            self._stopped = True
 
 
 class AsyncTreatmentLog(TreatmentLog):
@@ -458,3 +458,46 @@ class AsyncTreatmentLog(TreatmentLog):
                 self._logger.exception(
                     'Exception caught logging impression asynchronously'
                 )
+
+
+class InMemoryImpressionsStorage(object):
+    """
+    In memory storage for impressions.
+
+    Supports adding and popping events.
+    """
+
+    def __init__(self):
+        """
+        Construct an instance.
+
+        :param eventsQueueSize: How many events to queue before forcing a submission
+        """
+        self._impressions = {}
+        self._queue_full_hook = None
+        self._lock = Lock()
+
+    def log_impression(self, impression):
+        """
+        Add an avent to storage.
+
+        :param impression: Event to be added in the storage
+        :type impression: Impression
+        """
+        with self._lock:
+            if impression.feature_name not in self._impressions:
+                self._impressions[impression.feature_name] = []
+
+            self._impressions[impression.feature_name].append(impression)
+
+    def pop_all(self):
+        """
+        Pop multiple items from the storage.
+
+        :param count: number of items to be retrieved and removed from the queue.
+        """
+        with self._lock:
+            impressions = build_impressions_data(self._impressions)
+            self._impressions = {}
+
+        return impressions

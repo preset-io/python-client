@@ -99,17 +99,10 @@ class SelfRefreshingBrokerInitTests(TestCase, MockUtilsMixin):
         self.build_split_fetcher_mock.assert_called_once_with()
         self.assertEqual(self.build_split_fetcher_mock.return_value, client._split_fetcher)
 
-    def test_calls_build_build_treatment_log(self):
-        """Test that __init__ calls _build_treatment_log"""
-        client = SelfRefreshingBroker(self.some_api_key)
-        self.build_treatment_log_mock.assert_called_once_with()
-        self.assertEqual(self.build_treatment_log_mock.return_value, client._treatment_log)
-
     def test_calls_build_treatment_log(self):
         """Test that __init__ calls _build_treatment_log"""
         client = SelfRefreshingBroker(self.some_api_key)
         self.build_treatment_log_mock.assert_called_once_with()
-        self.assertEqual(self.build_treatment_log_mock.return_value, client._treatment_log)
 
     def test_calls_build_metrics(self):
         """Test that __init__ calls _build_metrics"""
@@ -427,26 +420,10 @@ class SelfRefreshingBrokerBuildTreatmentLogTests(TestCase, MockUtilsMixin):
             'splitio.brokers.SelfRefreshingBroker._start')
         self.some_api_key = mock.MagicMock()
 
-        self.self_updating_treatment_log_mock = self.patch(
-            'splitio.brokers.SelfUpdatingTreatmentLog')
         self.aync_treatment_log_mock = self.patch(
             'splitio.brokers.AsyncTreatmentLog')
         self.some_api_key = mock.MagicMock()
         self.client = SelfRefreshingBroker(self.some_api_key)
-
-    def test_calls_self_updating_treatment_log_constructor(self):
-        """Tests that _build_treatment_log calls SelfUpdatingTreatmentLog constructor"""
-        self.self_updating_treatment_log_mock.assert_called_once_with(
-            self.client._sdk_api,
-            max_count=self.client._max_impressions_log_size,
-            interval=self.client._impressions_interval,
-            listener=None
-        )
-
-    def test_calls_async_treatment_log_constructor(self):
-        """Tests that _build_treatment_log calls AsyncTreatmentLog constructor"""
-        self.aync_treatment_log_mock.assert_called_once_with(
-            self.self_updating_treatment_log_mock.return_value)
 
     def test_returns_async_treatment_log(self):
         """Tests that _build_treatment_log returns an AsyncTreatmentLog"""

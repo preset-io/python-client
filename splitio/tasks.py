@@ -190,13 +190,15 @@ def report_metrics(metrics_cache, sdk_api):
         metrics_cache.disable()
 
 
-class EventsSyncTask:
+class EventsSyncTask(object):
     """
-    Events synchronization task uses an asynctask.AsyncTask to send events
-    periodically to the backend in a controlled way
+    Events synchronization task uses an asynctask.
+
+    AsyncTask to send events periodically to the backend in a controlled way.
     """
 
     def __init__(self, sdk_api, storage, period, bulk_size):
+        """Create en events synchronization task."""
         self._sdk_api = sdk_api
         self._storage = storage
         self._period = period
@@ -209,30 +211,28 @@ class EventsSyncTask:
         )
 
     def _get_failed(self):
-        """
-        Return up to <BULK_SIZE> events stored in the failed eventes queue
-        """
-        events = []
+        """Return up to <BULK_SIZE> events stored in the failed eventes queue."""
+        failed_events = []
         n = 0
         while n < self._bulk_size:
             try:
-                events.append(self._failed.get(False))
+                failed_events.append(self._failed.get(False))
             except queue.Empty:
                 # If no more items in queue, break the loop
                 break
-        return events
+        return failed_events
 
-    def _add_to_failed_queue(self, events):
-        """
-        Add events that were about to be sent to a secondary queue for failed sends
-        """
-        for e in events:
+    def _add_to_failed_queue(self, failed_events):
+        """Add events that were about to be sent to a secondary queue for failed sends."""
+        for e in failed_events:
             self._failed.put(e, False)
 
 
     def _send_events(self):
         """
-        Grabs events from the failed queue (and new ones if the bulk size
+        Send events.
+
+        Grabs events from the failed queue. (and new ones if the bulk size
         is not met) and submits them to the backend
         """
 
@@ -256,19 +256,71 @@ class EventsSyncTask:
             self._add_to_failed_queue(to_send)
 
     def start(self):
-        """
-        Start executing the events synchronization task
-        """
+        """Start executing the events synchronization task"""
         self._task.start()
 
     def stop(self):
-        """
-        Stop executing the events synchronization task
-        """
+        """Stop executing the events synchronization task"""
         self._task.stop()
 
     def flush(self):
+        """Flush events in storage"""
+        self._task.force_execution()
+
+
+class ImpressionsSyncTask(object):
+    """
+    Impressions synchronization task uses an asynctask.
+
+    AsyncTask to send events periodically to the backend in a controlled way
+    """
+
+    def __init__(self, sdk_api, storage, period, listener=None):
         """
-        Flush events in storage
+        Construct an impressions synchronization task.
+
+        :param sdk_api: SDK API client.
+        :type sdk_api: SdkApi
+
+        :param storage: impressions storage
+        :type storage: InMemoryImpressionsStorage
+
+        :param period: amount of time between impressions submissions
+        :type period: int
         """
+        self._sdk_api = sdk_api
+        self._storage = storage
+        self._period = period
+        self._listener = listener
+        self._task = asynctask.AsyncTask(
+            self._send_impressions,
+            self._period,
+            on_stop=self._send_impressions,
+        )
+
+    def _send_impressions(self):
+        """Get all impressions from storage and send them to the backend."""
+        impressions = self._storage.pop_all()
+        if not impressions:
+            return
+
+        try:
+            _notify_listener(self._listener, {'impressions': impressions})
+            status_code = self._sdk_api.test_impressions(impressions)
+            if status_code >= 300:
+                _logger.error("Event reporting failed with status code {}".format(status_code))
+        except Exception:
+            # Something went wrong
+            _logger.error("Exception raised while reporting events")
+
+    def start(self):
+        """Start executing the events synchronization task."""
+        self._task.start()
+
+    def stop(self):
+        """Stop executing the events synchronization task."""
+        self._task.stop()
+
+    def flush(self):
+        """Flush events in storage."""
         self._task.force_execution()

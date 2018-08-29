@@ -10,10 +10,9 @@ except ImportError:
 from unittest import TestCase
 from itertools import groupby
 
-from splitio.impressions import (Impression, build_impressions_data, TreatmentLog,
-                                 LoggerBasedTreatmentLog, InMemoryTreatmentLog,
-                                 CacheBasedTreatmentLog, SelfUpdatingTreatmentLog,
-                                 AsyncTreatmentLog)
+from splitio.impressions import Impression, build_impressions_data, TreatmentLog, \
+    LoggerBasedTreatmentLog, InMemoryTreatmentLog, CacheBasedTreatmentLog, \
+    AsyncTreatmentLog
 from splitio.tests.utils import MockUtilsMixin
 
 from splitio.tasks import report_impressions
@@ -297,188 +296,188 @@ class CacheBasedTreatmentLogTests(TestCase):
         self.some_impressions_cache.add_impression(self.some_impression)
 
 
-class SelfUpdatingTreatmentLogTests(TestCase, MockUtilsMixin):
-    def setUp(self):
-        self.some_api = mock.MagicMock()
-        self.some_interval = mock.MagicMock()
-        self.treatment_log = SelfUpdatingTreatmentLog(self.some_api, interval=self.some_interval)
-        self.timer_refresh_mock = self.patch_object(self.treatment_log, '_timer_refresh')
-
-    def test_start_calls_timer_refresh_if_stopped_true(self):
-        """Test that start calls _timer_refresh if stopped is True"""
-        self.treatment_log.stopped = True
-        self.treatment_log.start()
-        self.timer_refresh_mock.assert_called_once_with()
-
-    def test_start_sets_stopped_to_false_if_stopped_true(self):
-        """Test that start sets stopped to False if stopped is True before"""
-        self.treatment_log.stopped = True
-        self.treatment_log.start()
-        self.assertFalse(self.treatment_log.stopped)
-
-    def test_start_doesnt_call_timer_refresh_if_stopped_false(self):
-        """Test that start doesn't call _timer_refresh if stopped is False"""
-        self.treatment_log.stopped = False
-        self.treatment_log.start()
-        self.timer_refresh_mock.assert_not_called()
-
-
-class SelfUpdatingTreatmentLogTimerRefreshTests(TestCase, MockUtilsMixin):
-    def setUp(self):
-        self.some_api = mock.MagicMock()
-        self.some_interval = mock.MagicMock()
-        self.timer_mock = self.patch('splitio.impressions.Timer')
-        self.thread_pool_executor = self.patch('splitio.impressions.ThreadPoolExecutor')
-        self.treatment_log = SelfUpdatingTreatmentLog(self.some_api, interval=self.some_interval)
-        self.treatment_log.stopped = False
-
-    def test_calls_submit(self):
-        """Test that _timer_refresh calls submit on the executor pool if it is not stopped"""
-        self.treatment_log._timer_refresh()
-        self.thread_pool_executor.return_value.submit.assert_called_once_with(
-            self.treatment_log._update_impressions)
-
-    def test_creates_timer_with_fixed_interval(self):
-        """Test that _timer_refresh creates a timer with fixed interval if it isn't callable if it
-        is not stopped"""
-        self.treatment_log._interval = mock.NonCallableMagicMock()
-        self.treatment_log._timer_refresh()
-        self.timer_mock.assert_called_once_with(self.treatment_log._interval,
-                                                self.treatment_log._timer_refresh)
-
-    def test_creates_timer_with_randomized_interval(self):
-        """Test that _timer_refresh creates a timer with interval return value if it is callable
-        and it is not stopped"""
-        self.treatment_log._timer_refresh()
-        self.timer_mock.assert_called_once_with(self.treatment_log._interval.return_value,
-                                                self.treatment_log._timer_refresh)
-
-    def test_creates_timer_even_if_worker_thread_raises_exception(self):
-        """Test that _timer_refresh creates a timer even if an exception is raised submiting to the
-        executor pool"""
-        self.thread_pool_executor.return_value.submit.side_effect = Exception()
-        self.treatment_log._timer_refresh()
-        self.timer_mock.assert_called_once_with(self.treatment_log._interval.return_value,
-                                                self.treatment_log._timer_refresh)
-
-    def test_starts_timer(self):
-        """Test that _timer_refresh starts the timer if it is not stopped"""
-        self.treatment_log._timer_refresh()
-        self.timer_mock.return_value.start.assert_called_once_with()
-
-    def test_stopped_if_timer_raises_exception(self):
-        """Test that _timer_refresh stops the refresh if an exception is raise setting up the timer
-        """
-        self.timer_mock.side_effect = Exception
-        self.treatment_log._timer_refresh()
-        self.assertTrue(self.treatment_log.stopped)
-
-
-class SelfUpdatingTreatmentLogNotifyEvictionTests(TestCase, MockUtilsMixin):
-    def setUp(self):
-        self.some_api = mock.MagicMock()
-        self.some_feature_name = mock.MagicMock()
-        self.some_feature_impressions = [mock.MagicMock()]
-        self.thread_pool_executor_mock = self.patch('splitio.impressions.ThreadPoolExecutor')
-        self.treatment_log = SelfUpdatingTreatmentLog(self.some_api)
-
-    def test_doesnt_call_submit_if_feature_name_is_none(self):
-        """Test that _notify_eviction doesn't call the executor submit if feature_name is None"""
-        self.treatment_log._notify_eviction(None, self.some_feature_impressions)
-        self.thread_pool_executor_mock.return_value.submit.assert_not_called()
-
-    def test_doesnt_call_submit_if_feature_impressions_is_none(self):
-        """Test that _notify_eviction doesn't call the executor submit if feature_impressions is
-        None"""
-        self.treatment_log._notify_eviction(self.some_feature_name, None)
-        self.thread_pool_executor_mock.return_value.submit.assert_not_called()
-
-    def test_doesnt_call_submit_if_feature_impressions_is_empty(self):
-        """Test that _notify_eviction doesn't call the executor submit if feature_impressions is
-        empty"""
-        self.treatment_log._notify_eviction(self.some_feature_name, [])
-        self.thread_pool_executor_mock.return_value.submit.assert_not_called()
-
-    def test_calls_submit(self):
-        """Test that _notify_eviction calls submit on the executor"""
-        self.treatment_log._notify_eviction(self.some_feature_name, self.some_feature_impressions)
-        self.thread_pool_executor_mock.return_value.submit.assert_called_once_with(
-            self.treatment_log._update_evictions, self.some_feature_name,
-            self.some_feature_impressions)
-
-
-class SelfUpdatingTreatmentLogUpdateImpressionsTests(TestCase, MockUtilsMixin):
-    def setUp(self):
-        self.some_api = mock.MagicMock()
-        self.some_interval = mock.MagicMock()
-        self.build_impressions_data_mock = self.patch(
-            'splitio.impressions.build_impressions_data',
-            return_value=[mock.MagicMock(), mock.MagicMock()])
-        self.treatment_log = SelfUpdatingTreatmentLog(self.some_api, interval=self.some_interval)
-        self.fetch_all_and_clear_mock = self.patch_object(
-            self.treatment_log, 'fetch_all_and_clear')
-
-    def test_calls_fetch_all_and_clear(self):
-        """Test that _update_impressions call fetch_all_and_clear"""
-        self.treatment_log._update_impressions()
-        self.fetch_all_and_clear_mock.assert_called_once_with()
-
-    def test_calls_build_impressions_data(self):
-        """Test that _update_impressions call build_impressions_data"""
-        self.treatment_log._update_impressions()
-        self.build_impressions_data_mock.assert_called_once_with(
-            self.fetch_all_and_clear_mock.return_value)
-
-    def test_calls_test_impressions(self):
-        """Test that _update_impressions call test_impressions on the api"""
-        self.treatment_log._update_impressions()
-        self.some_api.test_impressions.assert_called_once_with(
-            self.build_impressions_data_mock.return_value)
-
-    def test_doesnt_call_test_impressions_with_empty_data(self):
-        """Test that _update_impressions doesn't call test_impressions on the api"""
-        self.build_impressions_data_mock.return_value = []
-        self.treatment_log._update_impressions()
-        self.some_api.test_impressions.assert_not_called()
-
-
-class SelfUpdatingTreatmentLogUpdateEvictionsTests(TestCase, MockUtilsMixin):
-    def setUp(self):
-        self.some_api = mock.MagicMock()
-        self.some_interval = mock.MagicMock()
-        self.some_feature_name = mock.MagicMock()
-        self.some_feature_impressions = [mock.MagicMock()]
-        self.build_impressions_data_mock = self.patch(
-            'splitio.impressions.build_impressions_data',
-            return_value=[mock.MagicMock(), mock.MagicMock()])
-        self.treatment_log = SelfUpdatingTreatmentLog(self.some_api, interval=self.some_interval)
-
-    def test_calls_build_impressions_data(self):
-        """Test that _update_evictions calls build_impressions_data_mock"""
-        self.treatment_log._update_evictions(self.some_feature_name, self.some_feature_impressions)
-        self.build_impressions_data_mock.assert_called_once_with(
-            {self.some_feature_name: self.some_feature_impressions})
-
-    def test_calls_test_impressions(self):
-        """Test that _update_evictions calls test_impressions on the API client"""
-        self.treatment_log._update_evictions(self.some_feature_name, self.some_feature_impressions)
-        self.some_api.test_impressions.assert_called_once_with(
-            self.build_impressions_data_mock.return_value)
-
-    def test_doesnt_call_test_impressions_if_data_is_empty(self):
-        """Test that _update_evictions calls test_impressions on the API client"""
-        self.build_impressions_data_mock.return_value = []
-        self.treatment_log._update_evictions(self.some_feature_name, self.some_feature_impressions)
-        self.some_api.test_impressions.assert_not_called()
-
-    def test_doesnt_raise_exceptions(self):
-        """Test that _update_evictions doesn't raise exceptions when the API client does"""
-        self.some_api.test_impressions.side_effect = Exception()
-        try:
-            self.treatment_log._update_evictions(self.some_feature_name,
-                                                 self.some_feature_impressions)
-        except:
-            self.fail('Unexpected exception raised')
+# class SelfUpdatingTreatmentLogTests(TestCase, MockUtilsMixin):
+#     def setUp(self):
+#         self.some_api = mock.MagicMock()
+#         self.some_interval = mock.MagicMock()
+#         self.treatment_log = SelfUpdatingTreatmentLog(self.some_api, interval=self.some_interval)
+#         self.timer_refresh_mock = self.patch_object(self.treatment_log, '_timer_refresh')
+#
+#     def test_start_calls_timer_refresh_if_stopped_true(self):
+#         """Test that start calls _timer_refresh if stopped is True"""
+#         self.treatment_log.stopped = True
+#         self.treatment_log.start()
+#         self.timer_refresh_mock.assert_called_once_with()
+#
+#     def test_start_sets_stopped_to_false_if_stopped_true(self):
+#         """Test that start sets stopped to False if stopped is True before"""
+#         self.treatment_log.stopped = True
+#         self.treatment_log.start()
+#         self.assertFalse(self.treatment_log.stopped)
+#
+#     def test_start_doesnt_call_timer_refresh_if_stopped_false(self):
+#         """Test that start doesn't call _timer_refresh if stopped is False"""
+#         self.treatment_log.stopped = False
+#         self.treatment_log.start()
+#         self.timer_refresh_mock.assert_not_called()
+#
+#
+# class SelfUpdatingTreatmentLogTimerRefreshTests(TestCase, MockUtilsMixin):
+#     def setUp(self):
+#         self.some_api = mock.MagicMock()
+#         self.some_interval = mock.MagicMock()
+#         self.timer_mock = self.patch('splitio.impressions.Timer')
+#         self.thread_pool_executor = self.patch('splitio.impressions.ThreadPoolExecutor')
+#         self.treatment_log = SelfUpdatingTreatmentLog(self.some_api, interval=self.some_interval)
+#         self.treatment_log.stopped = False
+#
+#     def test_calls_submit(self):
+#         """Test that _timer_refresh calls submit on the executor pool if it is not stopped"""
+#         self.treatment_log._timer_refresh()
+#         self.thread_pool_executor.return_value.submit.assert_called_once_with(
+#             self.treatment_log._update_impressions)
+#
+#     def test_creates_timer_with_fixed_interval(self):
+#         """Test that _timer_refresh creates a timer with fixed interval if it isn't callable if it
+#         is not stopped"""
+#         self.treatment_log._interval = mock.NonCallableMagicMock()
+#         self.treatment_log._timer_refresh()
+#         self.timer_mock.assert_called_once_with(self.treatment_log._interval,
+#                                                 self.treatment_log._timer_refresh)
+#
+#     def test_creates_timer_with_randomized_interval(self):
+#         """Test that _timer_refresh creates a timer with interval return value if it is callable
+#         and it is not stopped"""
+#         self.treatment_log._timer_refresh()
+#         self.timer_mock.assert_called_once_with(self.treatment_log._interval.return_value,
+#                                                 self.treatment_log._timer_refresh)
+#
+#     def test_creates_timer_even_if_worker_thread_raises_exception(self):
+#         """Test that _timer_refresh creates a timer even if an exception is raised submiting to the
+#         executor pool"""
+#         self.thread_pool_executor.return_value.submit.side_effect = Exception()
+#         self.treatment_log._timer_refresh()
+#         self.timer_mock.assert_called_once_with(self.treatment_log._interval.return_value,
+#                                                 self.treatment_log._timer_refresh)
+#
+#     def test_starts_timer(self):
+#         """Test that _timer_refresh starts the timer if it is not stopped"""
+#         self.treatment_log._timer_refresh()
+#         self.timer_mock.return_value.start.assert_called_once_with()
+#
+#     def test_stopped_if_timer_raises_exception(self):
+#         """Test that _timer_refresh stops the refresh if an exception is raise setting up the timer
+#         """
+#         self.timer_mock.side_effect = Exception
+#         self.treatment_log._timer_refresh()
+#         self.assertTrue(self.treatment_log.stopped)
+#
+#
+# class SelfUpdatingTreatmentLogNotifyEvictionTests(TestCase, MockUtilsMixin):
+#     def setUp(self):
+#         self.some_api = mock.MagicMock()
+#         self.some_feature_name = mock.MagicMock()
+#         self.some_feature_impressions = [mock.MagicMock()]
+#         self.thread_pool_executor_mock = self.patch('splitio.impressions.ThreadPoolExecutor')
+#         self.treatment_log = SelfUpdatingTreatmentLog(self.some_api)
+#
+#     def test_doesnt_call_submit_if_feature_name_is_none(self):
+#         """Test that _notify_eviction doesn't call the executor submit if feature_name is None"""
+#         self.treatment_log._notify_eviction(None, self.some_feature_impressions)
+#         self.thread_pool_executor_mock.return_value.submit.assert_not_called()
+#
+#     def test_doesnt_call_submit_if_feature_impressions_is_none(self):
+#         """Test that _notify_eviction doesn't call the executor submit if feature_impressions is
+#         None"""
+#         self.treatment_log._notify_eviction(self.some_feature_name, None)
+#         self.thread_pool_executor_mock.return_value.submit.assert_not_called()
+#
+#     def test_doesnt_call_submit_if_feature_impressions_is_empty(self):
+#         """Test that _notify_eviction doesn't call the executor submit if feature_impressions is
+#         empty"""
+#         self.treatment_log._notify_eviction(self.some_feature_name, [])
+#         self.thread_pool_executor_mock.return_value.submit.assert_not_called()
+#
+#     def test_calls_submit(self):
+#         """Test that _notify_eviction calls submit on the executor"""
+#         self.treatment_log._notify_eviction(self.some_feature_name, self.some_feature_impressions)
+#         self.thread_pool_executor_mock.return_value.submit.assert_called_once_with(
+#             self.treatment_log._update_evictions, self.some_feature_name,
+#             self.some_feature_impressions)
+#
+#
+# class SelfUpdatingTreatmentLogUpdateImpressionsTests(TestCase, MockUtilsMixin):
+#     def setUp(self):
+#         self.some_api = mock.MagicMock()
+#         self.some_interval = mock.MagicMock()
+#         self.build_impressions_data_mock = self.patch(
+#             'splitio.impressions.build_impressions_data',
+#             return_value=[mock.MagicMock(), mock.MagicMock()])
+#         self.treatment_log = SelfUpdatingTreatmentLog(self.some_api, interval=self.some_interval)
+#         self.fetch_all_and_clear_mock = self.patch_object(
+#             self.treatment_log, 'fetch_all_and_clear')
+#
+#     def test_calls_fetch_all_and_clear(self):
+#         """Test that _update_impressions call fetch_all_and_clear"""
+#         self.treatment_log._update_impressions()
+#         self.fetch_all_and_clear_mock.assert_called_once_with()
+#
+#     def test_calls_build_impressions_data(self):
+#         """Test that _update_impressions call build_impressions_data"""
+#         self.treatment_log._update_impressions()
+#         self.build_impressions_data_mock.assert_called_once_with(
+#             self.fetch_all_and_clear_mock.return_value)
+#
+#     def test_calls_test_impressions(self):
+#         """Test that _update_impressions call test_impressions on the api"""
+#         self.treatment_log._update_impressions()
+#         self.some_api.test_impressions.assert_called_once_with(
+#             self.build_impressions_data_mock.return_value)
+#
+#     def test_doesnt_call_test_impressions_with_empty_data(self):
+#         """Test that _update_impressions doesn't call test_impressions on the api"""
+#         self.build_impressions_data_mock.return_value = []
+#         self.treatment_log._update_impressions()
+#         self.some_api.test_impressions.assert_not_called()
+#
+#
+# class SelfUpdatingTreatmentLogUpdateEvictionsTests(TestCase, MockUtilsMixin):
+#     def setUp(self):
+#         self.some_api = mock.MagicMock()
+#         self.some_interval = mock.MagicMock()
+#         self.some_feature_name = mock.MagicMock()
+#         self.some_feature_impressions = [mock.MagicMock()]
+#         self.build_impressions_data_mock = self.patch(
+#             'splitio.impressions.build_impressions_data',
+#             return_value=[mock.MagicMock(), mock.MagicMock()])
+#         self.treatment_log = SelfUpdatingTreatmentLog(self.some_api, interval=self.some_interval)
+#
+#     def test_calls_build_impressions_data(self):
+#         """Test that _update_evictions calls build_impressions_data_mock"""
+#         self.treatment_log._update_evictions(self.some_feature_name, self.some_feature_impressions)
+#         self.build_impressions_data_mock.assert_called_once_with(
+#             {self.some_feature_name: self.some_feature_impressions})
+#
+#     def test_calls_test_impressions(self):
+#         """Test that _update_evictions calls test_impressions on the API client"""
+#         self.treatment_log._update_evictions(self.some_feature_name, self.some_feature_impressions)
+#         self.some_api.test_impressions.assert_called_once_with(
+#             self.build_impressions_data_mock.return_value)
+#
+#     def test_doesnt_call_test_impressions_if_data_is_empty(self):
+#         """Test that _update_evictions calls test_impressions on the API client"""
+#         self.build_impressions_data_mock.return_value = []
+#         self.treatment_log._update_evictions(self.some_feature_name, self.some_feature_impressions)
+#         self.some_api.test_impressions.assert_not_called()
+#
+#     def test_doesnt_raise_exceptions(self):
+#         """Test that _update_evictions doesn't raise exceptions when the API client does"""
+#         self.some_api.test_impressions.side_effect = Exception()
+#         try:
+#             self.treatment_log._update_evictions(self.some_feature_name,
+#                                                  self.some_feature_impressions)
+#         except:
+#             self.fail('Unexpected exception raised')
 
 
 class AsyncTreatmentLogTests(TestCase, MockUtilsMixin):
@@ -522,17 +521,17 @@ class TestImpressionListener(TestCase):
     modes
     """
 
-    def test_inmemory_impression_listener(self):
-        some_api = mock.MagicMock()
-        listener = mock.MagicMock()
-        treatment_log = SelfUpdatingTreatmentLog(some_api, listener=listener)
-        with mock.patch(
-            'splitio.impressions.build_impressions_data',
-            return_value=[1, 2, 3]
-        ):
-            treatment_log._update_evictions('some_feature', [])
-
-        listener.assert_called_once_with([1, 2, 3])
+#    def test_inmemory_impression_listener(self):
+#        some_api = mock.MagicMock()
+#        listener = mock.MagicMock()
+#        treatment_log = SelfUpdatingTreatmentLog(some_api, listener=listener)
+#        with mock.patch(
+#            'splitio.impressions.build_impressions_data',
+#            return_value=[1, 2, 3]
+#        ):
+#            treatment_log._update_evictions('some_feature', [])
+#
+#        listener.assert_called_once_with([1, 2, 3])
 
     def test_uwsgi_impression_listener(self):
         impressions_cache = mock.MagicMock()

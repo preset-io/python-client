@@ -132,6 +132,7 @@ class AsyncTask(object):
             return
         # Queue is of infinite size, should not raise an exception
         self._messages.put(__TASK_STOP__, False)
+        self._thread.join()
 
     def force_execution(self):
         """

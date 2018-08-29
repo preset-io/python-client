@@ -18,7 +18,7 @@ from splitio.exceptions import TimeoutException
 from splitio.metrics import Metrics, AsyncMetrics, ApiMetrics, \
     CacheBasedMetrics
 from splitio.impressions import TreatmentLog, AsyncTreatmentLog, \
-    SelfUpdatingTreatmentLog, CacheBasedTreatmentLog
+    CacheBasedTreatmentLog, InMemoryImpressionsStorage
 from splitio.redis_support import RedisSplitCache, RedisImpressionsCache, \
     RedisMetricsCache, get_redis, RedisEventsCache
 from splitio.splits import SelfRefreshingSplitFetcher, SplitParser, \
@@ -29,7 +29,7 @@ from splitio.segments import ApiSegmentChangeFetcher, \
 from splitio.config import DEFAULT_CONFIG, MAX_INTERVAL, parse_config_file
 from splitio.uwsgi import UWSGISplitCache, UWSGIImpressionsCache, \
     UWSGIMetricsCache, UWSGIEventsCache, get_uwsgi
-from splitio.tasks import EventsSyncTask
+from splitio.tasks import EventsSyncTask, ImpressionsSyncTask
 from splitio.events import InMemoryEventStorage
 
 
@@ -183,6 +183,37 @@ class JSONFileBroker(BaseBroker):
         return None
 
 class SelfRefreshingBroker(BaseBroker):
+
+
+    class __StorageAdaper(object):
+        """
+        Storage adapter for impressions.
+
+        This class functions as an adapter to the new task-style impressions approach,
+        in order to prevent breaking the interfaces.
+
+        We need to refactor this ASAP!.
+        """
+
+        def __init__(self, storage):
+            """
+            Construct storage adapter.
+
+            :param storage: reference to impressions storage
+            :type storage:  InMemoryImpressionsStorage
+            """
+            self._storage = storage
+
+        def log(self, impression):
+            """
+            Log an impression.
+
+            :param impression: Impression to be sent to storage
+            :type impression: Impression
+            """
+            self._storage.log_impression(impression)
+
+
     def __init__(self, api_key, config=None, sdk_api_base_url=None,
                  events_api_base_url=None, impression_listener=None):
         """
@@ -220,7 +251,6 @@ class SelfRefreshingBroker(BaseBroker):
         self._init_config(config)
         self._sdk_api = self._build_sdk_api()
         self._split_fetcher = self._build_split_fetcher()
-        self._treatment_log = self._build_treatment_log()
         self._metrics = self._build_metrics()
         self._start()
 
@@ -233,6 +263,8 @@ class SelfRefreshingBroker(BaseBroker):
         )
         self._events_storage.set_queue_full_hook(lambda: self._events_task.flush())
         self._events_task.start()
+
+        self._build_treatment_log()
 
     def _init_config(self, config=None):
         self._config = dict(DEFAULT_CONFIG)
@@ -302,17 +334,20 @@ class SelfRefreshingBroker(BaseBroker):
         return split_fetcher
 
     def _build_treatment_log(self):
-        """Build the treatment log implementation.
+        """
+        Build the treatment log implementation.
+
         :return: The treatment log implementation.
         :rtype: TreatmentLog
         """
-        self_updating_treatment_log = SelfUpdatingTreatmentLog(
+        self._impressions_storage = InMemoryImpressionsStorage()
+        self._treatment_log = self.__StorageAdaper(self._impressions_storage)
+        self._impressions_task = ImpressionsSyncTask(
             self._sdk_api,
-            max_count=self._max_impressions_log_size,
-            interval=self._impressions_interval,
-            listener=self._impression_listener
+            self._impressions_storage,
+            self._config['impressionsRefreshRate']
         )
-        return AsyncTreatmentLog(self_updating_treatment_log)
+        self._impressions_task.start()
 
     def _build_metrics(self):
         """Build the metrics implementation.
@@ -327,8 +362,6 @@ class SelfRefreshingBroker(BaseBroker):
         return AsyncMetrics(api_metrics)
 
     def _start(self):
-        self._treatment_log.delegate.start()
-
         if self._ready > 0:
             event = threading.Event()
 
@@ -373,7 +406,7 @@ class SelfRefreshingBroker(BaseBroker):
     def destroy(self):
         self._destroyed = True
         self._split_fetcher.destroy()
-        self._treatment_log.destroy()
+        self._impressions_task.stop()
         self._metrics.destroy()
         self._events_task.stop()
 
